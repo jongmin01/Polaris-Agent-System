@@ -1,0 +1,99 @@
+# Polaris Agent System - .gitignore
+
+# 🔒 CRITICAL: API Keys & Secrets
+.env
+*.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+polaris.log
+polaris.error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Papers (optional - 논문 PDF는 용량이 크니 제외)
+# Papers/
+# *.pdf
+
+# Personal data (optional)
+# My Second Brain/
+# Life/
+# Personal_Operations_V1/
+
+# Phase 1.3: Data & Backups
+data/
+backup_versions/
+outputs/
+config/
+
+# Test files (optional - 개발 중이면 커밋해도 됨)
+test_*.py
+
+# Phase 1.3: Sensitive Data Protection
+data/
+backup_versions/
+outputs/
+config/
+logs/
+
+# Test files
+test_*.py

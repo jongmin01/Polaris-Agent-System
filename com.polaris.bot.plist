@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.polaris.bot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/jongmin/Desktop/Polaris_Agent_System/polaris_bot.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jongmin/Desktop/Polaris_Agent_System</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jongmin/Desktop/Polaris_Agent_System/logs/polaris.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/jongmin/Desktop/Polaris_Agent_System/logs/launchd_error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
