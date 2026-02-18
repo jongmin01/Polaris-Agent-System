@@ -7,6 +7,10 @@ on run argv
     -- 파라미터 받기
     set searchKeyword to item 1 of argv -- 예: "UIC"
     set mailLimit to item 2 of argv as integer -- 예: 5
+    set matchAllAccounts to false
+    if searchKeyword is "*" or searchKeyword is "ALL" or searchKeyword is "" then
+        set matchAllAccounts to true
+    end if
 
     tell application "Mail"
         set outputList to {}
@@ -20,7 +24,7 @@ on run argv
 
                 -- 계정 이름 매칭 (대소문자 구분 없이)
                 -- do shell script 대신 AppleScript 네이티브 비교 사용
-                if my textContains(accountName, searchKeyword) then
+                if matchAllAccounts or my textContains(accountName, searchKeyword) then
                     set accountFound to true
 
                     -- 받은편지함 찾기 (한글/영어 모두 지원)
@@ -79,14 +83,16 @@ on run argv
                             set mailCount to mailCount + 1
                         end repeat
 
-                        -- 계정을 찾았으면 종료 (단일 계정만 검색)
-                        exit repeat
+                        -- 단일 계정 검색 모드일 때만 종료
+                        if not matchAllAccounts then
+                            exit repeat
+                        end if
                     end if
                 end if
             end repeat
 
             -- 결과 반환
-            if not accountFound then
+            if not accountFound and not matchAllAccounts then
                 return "ERROR: 계정을 찾을 수 없습니다. 사용 가능한 계정: " & my getAccountNames()
             else if mailCount > 0 then
                 set AppleScript's text item delimiters to ":::"

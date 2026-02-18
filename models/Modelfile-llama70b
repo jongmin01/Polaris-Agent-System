@@ -1,0 +1,11 @@
+FROM llama3.3:70b
+
+# 컨텍스트 윈도우 (64GB RAM 기준)
+PARAMETER num_ctx 8192
+
+# 샘플링 파라미터
+PARAMETER temperature 0.6
+PARAMETER top_p 0.9
+
+# SYSTEM 프롬프트는 router.py SYSTEM_PROMPT에서 통합 관리 (중복 방지)
+# 모델 재생성 명령: ollama create llama70b-lite -f models/Modelfile-llama70b

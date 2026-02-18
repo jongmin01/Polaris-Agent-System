@@ -5,6 +5,12 @@ Polaris Bot - Telegram Interface
 당신의 연구를 안내하는 북극성
 """
 
+# =============================================================================
+# DEPRECATED - Scheduled for removal: 2026-04-15
+# Use: python -m polaris.bot_v2  (bot_v2.py via PolarisRouter)
+# This file: legacy keyword-based orchestrator, no longer maintained.
+# =============================================================================
+
 import os
 import logging
 import asyncio
@@ -28,8 +34,25 @@ from orchestrator import PolarisOrchestrator, AgentType
 from phd_agent import PhDAgent
 from mail_reader import MailReader
 from email_analyzer import EmailAnalyzer
-from physics_monitor import PhysicsMonitor, JobStatus  # Phase 1.2: Physics-Agent
+from hpc_monitor import PhysicsMonitor, JobStatus  # Phase 1.2: Physics-Agent
 from schedule_agent import ScheduleAgent  # Phase 1.5: Schedule-Agent
+
+import warnings
+warnings.warn(
+    "polaris_bot.py is deprecated and will be removed on 2026-04-15. "
+    "Use: python -m polaris.bot_v2",
+    DeprecationWarning,
+    stacklevel=1,
+)
+
+import datetime as _dt
+_DELETION_DATE = _dt.date(2026, 4, 15)
+if _dt.date.today() >= _DELETION_DATE and os.environ.get("POLARIS_ALLOW_LEGACY") != "1":
+    raise RuntimeError(
+        f"polaris_bot.py was scheduled for deletion on {_DELETION_DATE} and is no longer supported.\n"
+        "Use: python -m polaris.bot_v2\n"
+        "Emergency bypass: POLARIS_ALLOW_LEGACY=1 python polaris_bot.py"
+    )
 
 # 환경 변수 로드
 load_dotenv()

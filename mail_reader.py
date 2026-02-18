@@ -3,7 +3,6 @@
 mail_reader.py - Mail.app 읽기 모듈
 
 AppleScript를 사용하여 Mac Mail.app에서 메일 읽기
-UIC 계정 (jbaek27@uic.edu) 전용
 """
 
 import subprocess
@@ -23,15 +22,28 @@ class MailReader:
     - 제목, 발신자, 본문 추출
     """
 
-    def __init__(self, account_keyword: str = "UIC"):
+    def __init__(self, account_keyword: Optional[str] = None):
         """
         Args:
-            account_keyword: 대상 메일 계정 키워드 (기본값: UIC)
+            account_keyword: 대상 메일 계정 키워드 (기본값: MAIL_ACCOUNT_KEYWORDS 또는 PRIMARY)
                            계정 이름 또는 이메일 주소의 일부
         """
         print("📧 Mail.app fetch initialized")
 
-        self.account_keyword = account_keyword
+        if account_keyword:
+            self.account_keyword = account_keyword
+        else:
+            raw_keywords = os.getenv("MAIL_ACCOUNT_KEYWORDS", "").strip()
+            if raw_keywords:
+                tokens = [k.strip() for k in raw_keywords.split(",") if k.strip()]
+                self.account_keyword = tokens[0] if len(tokens) == 1 else "*"
+                self.allowed_keywords = tokens
+            else:
+                legacy = os.getenv("MAIL_ACCOUNT_KEYWORD", "").strip()
+                self.account_keyword = legacy or "PRIMARY"
+                self.allowed_keywords = [legacy] if legacy else ["PRIMARY"]
+        if not hasattr(self, "allowed_keywords"):
+            self.allowed_keywords = [self.account_keyword]
         self.script_path = Path(__file__).parent / "read_mail.scpt"
 
         if not self.script_path.exists():
@@ -84,6 +96,12 @@ class MailReader:
                 raise Exception(error_msg)
 
             print(f"✅ Mail.app 접근 성공 (inbox count: {test_result.stdout.strip()})")
+            try:
+                accounts = self.list_accounts()
+                if accounts:
+                    print(f"📮 Available accounts: {', '.join(accounts)}")
+            except Exception:
+                pass
 
         except subprocess.TimeoutExpired:
             raise Exception("MAIL_APP_TIMEOUT: Preflight check timed out")
@@ -153,6 +171,7 @@ class MailReader:
 
             # 파싱
             mails = self._parse_mail_output(output)
+            mails = self._filter_by_allowed_keywords(mails)
             print(f"✅ Successfully parsed {len(mails)} emails")
             return mails
 
@@ -198,6 +217,19 @@ class MailReader:
 
         return mails
 
+    def _filter_by_allowed_keywords(self, mails: List[Dict]) -> List[Dict]:
+        """Filter parsed mails by allowed account keywords (case-insensitive)."""
+        if not self.allowed_keywords or self.allowed_keywords == ["*"]:
+            return mails
+
+        allowed = [k.lower() for k in self.allowed_keywords]
+        filtered = []
+        for mail in mails:
+            account = str(mail.get("account", "")).lower()
+            if any(token in account for token in allowed):
+                filtered.append(mail)
+        return filtered
+
     def format_mails_for_telegram(self, mails: List[Dict]) -> str:
         """
         Telegram용 메시지 포맷팅
@@ -241,6 +273,23 @@ class MailReader:
         mails = self.get_unread_mails(limit=100)  # 많이 가져와서 카운트
         return len(mails)
 
+    def list_accounts(self) -> List[str]:
+        """Return available Apple Mail account names."""
+        result = subprocess.run(
+            ['osascript', '-e', 'tell application "Mail" to get name of every account'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            raise Exception(f"MAIL_ACCOUNT_LIST_FAILED: {result.stderr.strip()}")
+
+        raw = result.stdout.strip()
+        if not raw:
+            return []
+        # osascript returns comma-separated account names
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
 
 # 테스트용
 def test_mail_reader():
@@ -250,7 +299,7 @@ def test_mail_reader():
     print("=" * 60)
     print()
 
-    reader = MailReader(account_keyword="UIC")
+    reader = MailReader()
 
     print("[1/2] 읽지 않은 메일 가져오기...")
     mails = reader.get_unread_mails(limit=5)

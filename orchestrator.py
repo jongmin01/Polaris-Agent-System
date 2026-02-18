@@ -5,11 +5,26 @@ Polaris Orchestrator - Intent Classification & Agent Routing
 북극성처럼 당신의 요청을 올바른 Agent로 안내합니다.
 """
 
+# =============================================================================
+# DEPRECATED - Scheduled for removal: 2026-04-15
+# Use: polaris/router.py  (PolarisRouter class via ReAct loop)
+# This file: legacy keyword-based intent classifier, no longer maintained.
+# =============================================================================
+
 import os
 import re
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
+
+import datetime as _dt
+_DELETION_DATE = _dt.date(2026, 4, 15)
+if _dt.date.today() >= _DELETION_DATE and os.environ.get("POLARIS_ALLOW_LEGACY") != "1":
+    raise RuntimeError(
+        f"orchestrator.py was scheduled for deletion on {_DELETION_DATE} and is no longer supported.\n"
+        "Use: polaris/router.py (PolarisRouter class)\n"
+        "Emergency bypass: POLARIS_ALLOW_LEGACY=1"
+    )
 
 
 class AgentType(Enum):

@@ -43,12 +43,12 @@ if [ -z "$PYTHON_PATH" ]; then
 fi
 echo -e "${GREEN}✅ Python: $PYTHON_PATH${NC}"
 
-# polaris_bot.py 확인
-if [ ! -f "$PROJECT_DIR/polaris_bot.py" ]; then
-    echo -e "${RED}❌ polaris_bot.py를 찾을 수 없습니다.${NC}"
+# bot_v2.py 확인
+if [ ! -f "$PROJECT_DIR/polaris/bot_v2.py" ]; then
+    echo -e "${RED}❌ polaris/bot_v2.py를 찾을 수 없습니다.${NC}"
     exit 1
 fi
-echo -e "${GREEN}✅ polaris_bot.py 발견${NC}"
+echo -e "${GREEN}✅ polaris/bot_v2.py 발견${NC}"
 
 echo ""
 echo -e "${YELLOW}[2/5] 기존 프로세스 확인...${NC}"
@@ -65,7 +65,7 @@ echo ""
 echo -e "${YELLOW}[3/5] Polaris Bot 시작...${NC}"
 
 # pm2로 실행
-pm2 start polaris_bot.py \
+pm2 start "$PROJECT_DIR/polaris/bot_v2.py" \
     --name "polaris-bot" \
     --interpreter "$PYTHON_PATH" \
     --cwd "$PROJECT_DIR" \

@@ -40,12 +40,12 @@ echo -e "${GREEN}✅ 사용자: $CURRENT_USER${NC}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo -e "${GREEN}✅ 프로젝트: $PROJECT_DIR${NC}"
 
-# polaris_bot.py 확인
-if [ ! -f "$PROJECT_DIR/polaris_bot.py" ]; then
-    echo -e "${RED}❌ polaris_bot.py를 찾을 수 없습니다.${NC}"
+# bot_v2.py 확인
+if [ ! -f "$PROJECT_DIR/polaris/bot_v2.py" ]; then
+    echo -e "${RED}❌ polaris/bot_v2.py를 찾을 수 없습니다.${NC}"
     exit 1
 fi
-echo -e "${GREEN}✅ polaris_bot.py 발견${NC}"
+echo -e "${GREEN}✅ polaris/bot_v2.py 발견${NC}"
 
 echo ""
 
@@ -96,7 +96,7 @@ cat > "$PLIST_FILE" <<EOF
     <key>ProgramArguments</key>
     <array>
         <string>$PYTHON_PATH</string>
-        <string>$PROJECT_DIR/polaris_bot.py</string>
+        <string>$PROJECT_DIR/polaris/bot_v2.py</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -178,7 +178,7 @@ if launchctl list | grep -q "com.polaris.bot"; then
     echo -e "${GREEN}✅ 서비스 등록 확인${NC}"
 
     # 프로세스 확인
-    if pgrep -f "polaris_bot.py" > /dev/null; then
+    if pgrep -f "bot_v2.py" > /dev/null; then
         echo -e "${GREEN}✅ Polaris Bot 실행 중${NC}"
     else
         echo -e "${YELLOW}⚠️  Bot이 아직 시작 안됨 (로그 확인 필요)${NC}"

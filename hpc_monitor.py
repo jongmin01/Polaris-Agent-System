@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-physics_monitor.py - ALCF Polaris VASP Job Monitor
+hpc_monitor.py - HPC Job Monitor
 
 Phase 1.2: Physics-Agent
 - Zombie guard (10s timeout)
@@ -12,8 +12,10 @@ import subprocess
 import logging
 import time
 import json
+import os
+import shlex
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from datetime import datetime
 from enum import Enum
 
@@ -28,7 +30,7 @@ class JobStatus(Enum):
     ZOMBIE = "ZOMBIE"
 
 
-class PhysicsMonitor:
+class HPCMonitor:
     """
     Monitor VASP jobs on ALCF Polaris
 
@@ -66,7 +68,122 @@ class PhysicsMonitor:
         )
         self.logger.addHandler(console_handler)
 
-        self.logger.info("Physics Monitor initialized")
+        self.hpc_profiles = self._load_profiles()
+        requested = os.getenv("HPC_ACTIVE_PROFILE", "").strip()
+        active = requested if requested in self.hpc_profiles else next(iter(self.hpc_profiles.keys()))
+        self.set_profile(active)
+        self.logger.info("HPC Monitor initialized")
+        self.logger.info(
+            "HPC config: profile=%s host=%s scheduler=%s user=%s",
+            self.profile_name,
+            self.hpc_host,
+            self.hpc_scheduler,
+            self.hpc_username or "(unresolved)",
+        )
+
+    def _load_profiles(self) -> Dict[str, Dict[str, Any]]:
+        """Load HPC profiles from env or build a single default profile."""
+        raw = os.getenv("HPC_PROFILES_JSON", "").strip()
+        profiles: Dict[str, Dict[str, Any]] = {}
+
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    for name, cfg in parsed.items():
+                        if isinstance(cfg, dict):
+                            profiles[str(name)] = cfg
+            except json.JSONDecodeError as e:
+                self.logger.warning("Invalid HPC_PROFILES_JSON: %s", e)
+
+        if profiles:
+            return profiles
+
+        return {
+            "default": {
+                "host": os.getenv("HPC_HOST", "polaris"),
+                "scheduler": os.getenv("HPC_SCHEDULER", "pbs"),
+                "username": os.getenv("HPC_USERNAME", ""),
+                "remote_path": os.getenv("HPC_REMOTE_PATH", ""),
+                "pbs_qstat_path": os.getenv("PBS_QSTAT_PATH", "/opt/pbs/bin/qstat"),
+                "slurm_squeue_path": os.getenv("SLURM_SQUEUE_PATH", "/usr/bin/squeue"),
+            }
+        }
+
+    def set_profile(self, profile_name: str):
+        """Activate an HPC profile by name."""
+        cfg = self.hpc_profiles.get(profile_name)
+        if not cfg:
+            raise ValueError(f"Unknown HPC profile '{profile_name}'")
+
+        self.profile_name = profile_name
+        self.hpc_host = str(cfg.get("host", "polaris")).strip() or "polaris"
+        self.hpc_scheduler = str(cfg.get("scheduler", "pbs")).strip().lower() or "pbs"
+        self.hpc_remote_path = str(cfg.get("remote_path", "")).strip()
+        self.pbs_qstat_path = str(cfg.get("pbs_qstat_path", "/opt/pbs/bin/qstat")).strip()
+        self.slurm_squeue_path = str(cfg.get("slurm_squeue_path", "/usr/bin/squeue")).strip()
+        self.hpc_username = self._resolve_hpc_username(
+            host=self.hpc_host,
+            explicit_user=str(cfg.get("username", "")).strip(),
+        )
+
+    def _resolve_hpc_username(self, host: str, explicit_user: str = "") -> str:
+        """Resolve HPC username from explicit profile value, ssh config, or remote whoami."""
+        if explicit_user:
+            return explicit_user
+
+        try:
+            cfg = subprocess.run(
+                ['ssh', '-G', host],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if cfg.returncode == 0:
+                for line in cfg.stdout.splitlines():
+                    if line.startswith("user "):
+                        user = line.split(" ", 1)[1].strip()
+                        if user:
+                            return user
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(
+                ['ssh', '-o', 'ConnectTimeout=10', host, 'whoami'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+
+        return ""
+
+    def _build_queue_command(self) -> str:
+        """Build scheduler-specific queue status command."""
+        if not self.hpc_username:
+            raise ValueError("HPC username not configured. Set HPC_USERNAME in .env")
+
+        user = shlex.quote(self.hpc_username)
+        use_path = bool(self.hpc_remote_path)
+
+        if self.hpc_scheduler == "pbs":
+            command = f"qstat -u {user}" if use_path else f"{shlex.quote(self.pbs_qstat_path)} -u {user}"
+        elif self.hpc_scheduler == "slurm":
+            command = f"squeue -u {user}" if use_path else f"{shlex.quote(self.slurm_squeue_path)} -u {user}"
+        else:
+            raise ValueError(
+                f"Unsupported HPC_SCHEDULER '{self.hpc_scheduler}'. Use 'pbs' or 'slurm'."
+            )
+
+        if use_path:
+            path = shlex.quote(self.hpc_remote_path)
+            return f"PATH={path}:$PATH; {command}"
+
+        return command
 
     def zombie_guard(self) -> bool:
         """
@@ -77,7 +194,7 @@ class PhysicsMonitor:
         """
         try:
             result = subprocess.run(
-                ['ssh', '-o', 'ConnectTimeout=10', 'polaris', 'echo heartbeat'],
+                ['ssh', '-o', 'ConnectTimeout=10', self.hpc_host, 'echo heartbeat'],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -134,7 +251,7 @@ class PhysicsMonitor:
         """
         try:
             result = subprocess.run(
-                ['ssh', 'polaris', command],
+                ['ssh', self.hpc_host, command],
                 capture_output=True,
                 text=True,
                 timeout=timeout
@@ -152,22 +269,27 @@ class PhysicsMonitor:
 
     def check_job_queue(self, job_id: str) -> Tuple[JobStatus, str]:
         """
-        Step 1: Check if job is in queue (qstat)
+        Step 1: Check if job is in queue (scheduler command)
 
         Args:
-            job_id: PBS job ID
+            job_id: Scheduler job ID
 
         Returns:
             (status, message)
         """
         self.logger.info(f"Step 1: Checking queue for job {job_id}")
 
-        success, stdout, stderr = self.run_ssh_command(f'qstat -u jbaek27')
+        try:
+            queue_cmd = self._build_queue_command()
+        except ValueError as e:
+            return JobStatus.ERROR, str(e)
+
+        success, stdout, stderr = self.run_ssh_command(queue_cmd)
 
         if not success:
             if self.check_mfa_session(stderr):
                 return JobStatus.MFA_EXPIRED, "MFA session expired"
-            return JobStatus.ERROR, f"qstat failed: {stderr}"
+            return JobStatus.ERROR, f"Queue command failed: {stderr}"
 
         # Parse qstat output for job_id
         if job_id in stdout:
@@ -175,17 +297,96 @@ class PhysicsMonitor:
             for line in stdout.split('\n'):
                 if job_id in line:
                     parts = line.split()
-                    if len(parts) >= 10:
-                        qstat_status = parts[9]  # PBS status column
-                        self.logger.info(f"Job {job_id} found in queue: {qstat_status}")
-
-                        if qstat_status == 'R':
-                            return JobStatus.RUNNING, f"Job running (qstat: {qstat_status})"
+                    if self.hpc_scheduler == "slurm":
+                        if len(parts) >= 5:
+                            queue_status = parts[4]
                         else:
-                            return JobStatus.RUNNING, f"Job in queue (qstat: {qstat_status})"
+                            queue_status = "UNKNOWN"
+                    else:
+                        if len(parts) >= 10:
+                            queue_status = parts[9]
+                        else:
+                            queue_status = "UNKNOWN"
+
+                    self.logger.info(f"Job {job_id} found in queue: {queue_status}")
+                    return JobStatus.RUNNING, f"Job in queue (status: {queue_status})"
 
         self.logger.warning(f"Job {job_id} not found in qstat output")
         return JobStatus.NOT_FOUND, "Job not in queue"
+
+    def _parse_queue_output(self, stdout: str) -> list[dict]:
+        """Parse scheduler queue output into normalized job rows."""
+        jobs: list[dict] = []
+        for line in stdout.splitlines():
+            raw = line.strip()
+            if not raw:
+                continue
+
+            if self.hpc_scheduler == "slurm":
+                upper = raw.upper()
+                if upper.startswith("JOBID ") or raw.startswith("---"):
+                    continue
+                parts = raw.split()
+                if len(parts) < 5:
+                    continue
+                jobs.append({
+                    "job_id": parts[0],
+                    "name": parts[2] if len(parts) >= 3 else "",
+                    "state": parts[4],
+                    "raw": line,
+                })
+            else:
+                if raw.endswith(":") or raw.startswith("Job ID") or raw.startswith("---"):
+                    continue
+                parts = raw.split()
+                if len(parts) < 10:
+                    continue
+                jobs.append({
+                    "job_id": parts[0],
+                    "name": parts[3] if len(parts) >= 4 else "",
+                    "state": parts[9],
+                    "raw": line,
+                })
+        return jobs
+
+    def list_jobs(self, cluster: Optional[str] = None, limit: int = 30) -> Dict:
+        """List current queued/running jobs for active or requested cluster."""
+        if cluster and cluster != self.profile_name:
+            self.set_profile(cluster)
+
+        result = {
+            "ok": False,
+            "cluster": self.profile_name,
+            "host": self.hpc_host,
+            "scheduler": self.hpc_scheduler,
+            "jobs": [],
+            "raw": "",
+            "error": "",
+        }
+
+        if not self.zombie_guard():
+            result["error"] = "SSH connection timeout or zombie"
+            return result
+
+        try:
+            queue_cmd = self._build_queue_command()
+        except ValueError as e:
+            result["error"] = str(e)
+            return result
+
+        success, stdout, stderr = self.run_ssh_command(queue_cmd)
+        if not success:
+            if self.check_mfa_session(stderr):
+                result["error"] = "MFA session expired"
+            else:
+                result["error"] = stderr.strip() or "Queue command failed"
+            return result
+
+        parsed = self._parse_queue_output(stdout)
+        result["ok"] = True
+        result["jobs"] = parsed[:limit]
+        result["raw"] = stdout
+        return result
 
     def check_outcar_modification(self, path: str) -> Tuple[JobStatus, str, Optional[int]]:
         """
@@ -302,22 +503,33 @@ class PhysicsMonitor:
         else:
             return JobStatus.RUNNING, "Not converged yet"
 
-    def monitor_job(self, job_id: str, path: str) -> Dict:
+    def monitor_job(self, job_id: str, path: str, cluster: Optional[str] = None) -> Dict:
         """
         Full monitoring hierarchy for a VASP job
 
         Args:
             job_id: PBS job ID
             path: Path to VASP calculation directory
+            cluster: Optional profile name for multi-cluster routing
 
         Returns:
             Status dict with full hierarchy results
         """
-        self.logger.info(f"=== Monitoring job {job_id} at {path} ===")
+        if cluster and cluster != self.profile_name:
+            self.set_profile(cluster)
+
+        self.logger.info(
+            "=== Monitoring job %s at %s (profile=%s, host=%s) ===",
+            job_id,
+            path,
+            self.profile_name,
+            self.hpc_host,
+        )
 
         result = {
             'job_id': job_id,
             'path': path,
+            'cluster': self.profile_name,
             'timestamp': datetime.now().isoformat(),
             'status': JobStatus.ERROR.value,
             'message': '',
@@ -402,14 +614,14 @@ class PhysicsMonitor:
 
 
 # Test function
-def test_physics_monitor():
+def test_hpc_monitor():
     """Test Physics Monitor"""
     print("=" * 60)
     print("  🔬 Physics Monitor Test")
     print("=" * 60)
     print()
 
-    monitor = PhysicsMonitor()
+    monitor = HPCMonitor()
 
     print("[1/2] Testing zombie guard...")
     if monitor.zombie_guard():
@@ -428,5 +640,8 @@ def test_physics_monitor():
     print("=" * 60)
 
 
+PhysicsMonitor = HPCMonitor
+
+
 if __name__ == "__main__":
-    test_physics_monitor()
+    test_hpc_monitor()
